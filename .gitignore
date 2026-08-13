@@ -1,0 +1,5 @@
+bin/
+*.tar
+vendor/
+.env
+*.exe

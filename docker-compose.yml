@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - PINGER_HOST=pinger
+      - PINGER_PORT=8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - pinger-svc
+      - redis
+    networks:
+      - app-network
+
+  pinger-svc:
+    build:
+      context: ./services/pinger
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8000
+      - TARGET_PROTO=http
+      - TARGET_HOST=gateway
+      - TARGET_PORT=8000
+      - TARGET_PATH=/healthz
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "/etc/redis/redis.conf"]
+    volumes:
+      - ./services/redis/redis.conf:/etc/redis/redis.conf:ro
+      - redis-data:/data/redis
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  redis-data:

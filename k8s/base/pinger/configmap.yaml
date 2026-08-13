@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pinger-cm
+data:
+  PORT: "8000"
+  INTERFACE: "0.0.0.0"
+  TARGET_PROTO: "http"
+  TARGET_HOST: "gateway.default.svc.cluster.local"
+  TARGET_PORT: "8000"
+  TARGET_PATH: "/healthz"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"

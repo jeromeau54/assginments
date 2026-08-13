@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+data:
+  PORT: "8000"
+  PINGER_HOST: "pinger"
+  PINGER_PORT: "8000"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"

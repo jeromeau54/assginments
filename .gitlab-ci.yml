@@ -1,0 +1,87 @@
+stages:
+  - build
+  - test
+  - package
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  IMAGE_TAG: $CI_COMMIT_SHA
+
+build-gateway:
+  stage: build
+  image: golang:1.21-alpine
+  script:
+    - cd services/gateway
+    - go mod download
+    - CGO_ENABLED=0 go build -o ../../bin/gateway ./cmd/gateway
+  artifacts:
+    paths:
+      - bin/gateway
+    expire_in: 1 hour
+
+build-pinger:
+  stage: build
+  image: golang:1.21-alpine
+  script:
+    - cd services/pinger
+    - go mod download
+    - CGO_ENABLED=0 go build -o ../../bin/pinger ./cmd/pinger
+  artifacts:
+    paths:
+      - bin/pinger
+    expire_in: 1 hour
+
+test-gateway:
+  stage: test
+  image: golang:1.21-alpine
+  needs:
+    - build-pinger
+  script:
+    - cd services/gateway
+    - go test ./...
+
+test-pinger:
+  stage: test
+  image: golang:1.21-alpine
+  needs:
+    - build-gateway
+  script:
+    - cd services/pinger
+    - go test ./...
+
+package-gateway:
+  stage: package
+  image: docker:24
+  script:
+    - docker build -t devops/gateway:$IMAGE_TAG -f services/gateway/Dockerfile services/gateway/
+    - docker save devops/gateway:$IMAGE_TAG -o gateway.tar
+  artifacts:
+    paths:
+      - gateway.tar
+    expire_in: 1 day
+
+package-pinger:
+  stage: package
+  image: docker:24
+  script:
+    - docker build -t devops/pinger:$IMAGE_TAG -f services/pinger/Dockerfile services/pinger/
+    - docker save devops/pinger:$IMAGE_TAG -o pinger.tar
+  artifacts:
+    paths:
+      - pinger.tar
+    expire_in: 1 day
+
+deploy-to-cluster:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  environment:
+    name: staging
+    url: https://staging.internal
+  script:
+    - kubectl config use-context $KUBECONFIG
+    - kubectl apply -k k8s/overlays/staging/
+    - kubectl -n assessment rollout status deployment/gateway
+    - kubectl -n assessment rollout status deployment/pinger
+  only:
+    - main

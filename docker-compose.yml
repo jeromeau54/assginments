@@ -14,12 +14,20 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - pinger-svc
-      - redis
+      pinger:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
-  pinger-svc:
+  pinger:
     build:
       context: ./services/pinger
       dockerfile: Dockerfile
@@ -32,18 +40,31 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   redis:
     image: redis:7-alpine
     command: ["redis-server", "/etc/redis/redis.conf"]
     volumes:
       - ./services/redis/redis.conf:/etc/redis/redis.conf:ro
-      - redis-data:/data/redis
+      - redis-data:/data
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 networks:
   app-network:

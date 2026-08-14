@@ -15,9 +15,13 @@ FROM alpine:3.19
 
 RUN apk --no-cache add ca-certificates
 
+RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -D appuser
+
 WORKDIR /app
 
-COPY --from=builder /go/src/pinger/app /usr/local/bin/pinger
+COPY --from=builder /go/src/pinger/app /app/pinger
+
+USER appuser
 
 EXPOSE 8000
 

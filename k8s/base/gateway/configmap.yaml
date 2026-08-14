@@ -5,6 +5,6 @@ metadata:
 data:
   PORT: "8000"
   PINGER_HOST: "pinger"
-  PINGER_PORT: "8000"
+  PINGER_PORT: "80"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"

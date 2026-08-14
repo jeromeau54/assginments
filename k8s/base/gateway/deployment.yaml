@@ -20,6 +20,7 @@ spec:
       containers:
         - name: gateway
           image: devops/gateway:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           envFrom:

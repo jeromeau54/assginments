@@ -20,6 +20,7 @@ spec:
       containers:
         - name: pinger
           image: devops/pinger:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           envFrom:

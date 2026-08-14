@@ -87,3 +87,21 @@ This log records each fix made while completing the assessment tasks, in the for
 - **Broken:** `k8s/base/redis/pvc.yaml` set `storageClassName: gp2`, an AWS EBS class. On a local `kind` cluster (or most non-AWS clusters) no `gp2` provisioner exists, so the PVC would stay `Pending` forever and the redis pod would hang in `ContainerCreating`, failing Tier 1's "all pods Running" goal.
 - **Found via:** Recognizing `gp2` as an AWS-specific StorageClass name while the README's prerequisites target `kind` for local development.
 - **Fix:** Removed `storageClassName` so the PVC uses the cluster's default StorageClass (`standard` on `kind`, and portable to any other cluster with a default class configured).
+
+### 14. Gateway/pinger pods stuck in `ErrImagePull` on kind
+
+- **Broken:** `k8s/base/gateway/deployment.yaml` and `k8s/base/pinger/deployment.yaml` didn't set `imagePullPolicy`, so Kubernetes used its default for a `:latest` tag, which is `Always`. Even after `kind load docker-image devops/gateway:latest ...` had already put the image on every node, the kubelet still tried to pull `devops/gateway:latest` / `devops/pinger:latest` from Docker Hub (there's no such repo, and no registry credentials configured) and failed permanently, leaving both pods in `ImagePullBackOff` and never Running.
+- **Found via:** `kubectl -n assessment get pods` showing `ErrImagePull`/`ImagePullBackOff`; `kubectl -n assessment describe pod -l app=gateway` showed `Failed to pull image "devops/gateway:latest": ... pull access denied, repository does not exist`.
+- **Fix:** Added `imagePullPolicy: IfNotPresent` to the `gateway` and `pinger` containers so the kubelet uses the image already loaded by `kind load docker-image` instead of trying to pull it.
+
+### 15. Pinger deployment referenced a ConfigMap that doesn't exist
+
+- **Broken:** `k8s/base/pinger/deployment.yaml`'s `envFrom` pointed at `configMapRef: name: pinger-config`, but the actual object defined in `k8s/base/pinger/configmap.yaml` is named `pinger-cm`. `pinger-config` doesn't exist anywhere in the base, so the pod would fail to start with `CreateContainerConfigError: configmap "pinger-config" not found`.
+- **Found via:** `kubectl apply -k k8s/base/` output listed `configmap/pinger-cm created`; cross-checking that name against `envFrom` in the pinger Deployment showed the mismatch (only surfaced once fix #14 above let the pod get far enough to hit this next).
+- **Fix:** Changed `envFrom.configMapRef.name` to `pinger-cm`.
+
+### Verification (Tier 1 goals)
+
+- `go build` + `go test ./...` pass for both `services/gateway` and `services/pinger`.
+- `docker build` succeeds for both images; `docker compose up -d --build` brings up all 3 containers and `docker compose ps` reports all three as `(healthy)`; `curl localhost:8000/healthz`, `/ping`, and `/readyz` all return successfully (`/ping` proxies through to pinger).
+- `kind load docker-image` + `kubectl apply -k k8s/base/` brings up `gateway`, `pinger`, and `redis` Deployments, all pods `1/1 Running`, all three Services have non-empty Endpoints, and `kubectl -n assessment port-forward svc/gateway 18080:80` + `curl` confirms `/healthz`, `/ping`, `/readyz` all respond correctly through the cluster.

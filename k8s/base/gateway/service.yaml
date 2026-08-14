@@ -11,4 +11,4 @@ spec:
       targetPort: 8000
       protocol: TCP
   selector:
-    app: gw
+    app: gateway

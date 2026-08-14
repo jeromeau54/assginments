@@ -30,6 +30,8 @@ spec:
           volumeMounts:
             - name: redis-config
               mountPath: /etc/redis
+            - name: redis-data
+              mountPath: /data
       volumes:
         - name: redis-config
           configMap:

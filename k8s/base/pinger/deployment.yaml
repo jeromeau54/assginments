@@ -25,7 +25,7 @@ spec:
             - containerPort: 8000
           envFrom:
             - configMapRef:
-                name: pinger-config
+                name: pinger-cm
           livenessProbe:
             httpGet:
               path: /healthz

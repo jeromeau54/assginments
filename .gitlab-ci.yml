@@ -80,12 +80,14 @@ package-pinger:
 
 deploy-to-cluster:
   stage: deploy
-  image: bitnami/kubectl:latest
+  image:
+    name: bitnami/kubectl:latest
+    entrypoint: [""]
   environment:
     name: staging
     url: https://staging.internal
   script:
-    - kubectl config use-context $KUBECONFIG
+    - kubectl config current-context
     - kubectl apply -k k8s/overlays/staging/
     - kubectl -n assessment rollout status deployment/gateway
     - kubectl -n assessment rollout status deployment/pinger

@@ -6,6 +6,8 @@ stages:
 
 variables:
   DOCKER_DRIVER: overlay2
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
   IMAGE_TAG: $CI_COMMIT_SHA
 
 build-gateway:
@@ -53,6 +55,8 @@ test-pinger:
 package-gateway:
   stage: package
   image: docker:24
+  services:
+    - docker:24-dind
   script:
     - docker build -t devops/gateway:$IMAGE_TAG -f services/gateway/Dockerfile services/gateway/
     - docker save devops/gateway:$IMAGE_TAG -o gateway.tar
@@ -64,6 +68,8 @@ package-gateway:
 package-pinger:
   stage: package
   image: docker:24
+  services:
+    - docker:24-dind
   script:
     - docker build -t devops/pinger:$IMAGE_TAG -f services/pinger/Dockerfile services/pinger/
     - docker save devops/pinger:$IMAGE_TAG -o pinger.tar

@@ -58,8 +58,10 @@ package-gateway:
   services:
     - docker:24-dind
   script:
-    - docker build -t devops/gateway:$IMAGE_TAG -f services/gateway/Dockerfile services/gateway/
-    - docker save devops/gateway:$IMAGE_TAG -o gateway.tar
+    - docker build -t $CI_REGISTRY_IMAGE/gateway:$IMAGE_TAG -f services/gateway/Dockerfile services/gateway/
+    - docker save $CI_REGISTRY_IMAGE/gateway:$IMAGE_TAG -o gateway.tar
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE/gateway:$IMAGE_TAG
   artifacts:
     paths:
       - gateway.tar
@@ -71,8 +73,10 @@ package-pinger:
   services:
     - docker:24-dind
   script:
-    - docker build -t devops/pinger:$IMAGE_TAG -f services/pinger/Dockerfile services/pinger/
-    - docker save devops/pinger:$IMAGE_TAG -o pinger.tar
+    - docker build -t $CI_REGISTRY_IMAGE/pinger:$IMAGE_TAG -f services/pinger/Dockerfile services/pinger/
+    - docker save $CI_REGISTRY_IMAGE/pinger:$IMAGE_TAG -o pinger.tar
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE/pinger:$IMAGE_TAG
   artifacts:
     paths:
       - pinger.tar
@@ -88,6 +92,16 @@ deploy-to-cluster:
     url: https://staging.internal
   script:
     - kubectl config current-context
+    - |
+      cat >> k8s/overlays/staging/kustomization.yaml <<EOF
+      images:
+        - name: devops/gateway
+          newName: $CI_REGISTRY_IMAGE/gateway
+          newTag: "$IMAGE_TAG"
+        - name: devops/pinger
+          newName: $CI_REGISTRY_IMAGE/pinger
+          newTag: "$IMAGE_TAG"
+      EOF
     - kubectl apply -k k8s/overlays/staging/
     - kubectl -n assessment rollout status deployment/gateway
     - kubectl -n assessment rollout status deployment/pinger

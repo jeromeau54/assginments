@@ -36,7 +36,7 @@ test-gateway:
   stage: test
   image: golang:1.21-alpine
   needs:
-    - build-pinger
+    - build-gateway
   script:
     - cd services/gateway
     - go test ./...
@@ -45,7 +45,7 @@ test-pinger:
   stage: test
   image: golang:1.21-alpine
   needs:
-    - build-gateway
+    - build-pinger
   script:
     - cd services/pinger
     - go test ./...

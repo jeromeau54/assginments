@@ -3,6 +3,7 @@ services:
     build:
       context: ./services/gateway
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -29,6 +30,7 @@ services:
     build:
       context: ./services/pinger
       dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
       - PORT=8000
       - TARGET_PROTO=http
@@ -51,6 +53,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     command: ["redis-server", "/etc/redis/redis.conf"]
     volumes:
       - ./services/redis/redis.conf:/etc/redis/redis.conf:ro

@@ -105,3 +105,48 @@ This log records each fix made while completing the assessment tasks, in the for
 - `go build` + `go test ./...` pass for both `services/gateway` and `services/pinger`.
 - `docker build` succeeds for both images; `docker compose up -d --build` brings up all 3 containers and `docker compose ps` reports all three as `(healthy)`; `curl localhost:8000/healthz`, `/ping`, and `/readyz` all return successfully (`/ping` proxies through to pinger).
 - `kind load docker-image` + `kubectl apply -k k8s/base/` brings up `gateway`, `pinger`, and `redis` Deployments, all pods `1/1 Running`, all three Services have non-empty Endpoints, and `kubectl -n assessment port-forward svc/gateway 18080:80` + `curl` confirms `/healthz`, `/ping`, `/readyz` all respond correctly through the cluster.
+
+---
+
+## Tier 2 — Make it reliable
+
+CI fixes were verified against a real pipeline run, not just static review: stood up a local self-hosted GitLab CE instance + a Docker-executor `gitlab-runner` (both in Docker, on the same Docker network), pushed this repo to a local-only test project, and watched the pipeline actually execute. That test project/runner is local-machine infrastructure only — separate from both the GitHub mirror and the real graded assessment repo, neither of which were touched.
+
+### 16. `test-gateway`/`test-pinger` had swapped `needs:`
+
+- **Broken:** `test-gateway` declared `needs: [build-pinger]` and `test-pinger` declared `needs: [build-gateway]` — each test job depended on the *other* service's build artifact instead of its own. Under GitLab's `needs:`-based DAG scheduling this also means a test job could start before the build job that actually matters to it has finished.
+- **Found via:** Reading each job's `needs:` against its own `script:` (`test-gateway` `cd`s into `services/gateway` but needed `build-pinger`'s artifacts). Confirmed the fix live: pipeline run against a local GitLab runner showed both `test-gateway` and `test-pinger` passing only after correcting this.
+- **Fix:** `test-gateway` now needs `build-gateway`; `test-pinger` now needs `build-pinger`.
+
+### 17. `package-gateway`/`package-pinger` had no Docker daemon to build against
+
+- **Broken:** Both package-stage jobs run `docker build`/`docker save` inside a `docker:24` image, but nothing provided a Docker daemon for that CLI to talk to — no `docker:24-dind` service, no `DOCKER_HOST`.
+- **Found via:** First real pipeline run (see below) got past build/test, and the package jobs were the next thing that would fail without this — confirmed by adding the fix and re-running: `docker build` completed, `docker save` produced `gateway.tar`/`pinger.tar`, and both were uploaded as job artifacts (visible in the GitLab job trace and via `Uploading artifacts as "archive" to coordinator... 201 Created`).
+- **Fix:** Added `services: [docker:24-dind]` to both package jobs, plus `DOCKER_HOST: tcp://docker:2375` and `DOCKER_TLS_CERTDIR: ""` in `variables:` (the dind service is reachable at hostname `docker`; TLS is disabled since no certs are provisioned for it).
+
+### 18. Live pipeline verification surfaced a real, but out-of-scope, deploy-stage bug
+
+- **Observed:** `deploy-to-cluster` fails with `error: unknown command "sh" for "kubectl"` — the `bitnami/kubectl:latest` image's entrypoint is `kubectl` itself, not a shell, so the runner's `sh -c "..."` script wrapper doesn't work against it.
+- **Not fixed here:** the README explicitly scopes "fix the deploy pipeline stage" to Tier 3, and there's no real staging cluster/`KUBECONFIG` in this local test setup anyway (`kubectl config use-context $KUBECONFIG` has nothing to point at). Left as-is; noted here since it was observed directly during Tier 2 verification and will need an image/entrypoint fix in Tier 3.
+
+### 19. Compose had no restart policy — a crashed container just stayed dead
+
+- **Broken:** None of the three services declared `restart:`. A crashed container (OOM, panic, any non-user-initiated exit) stayed `Exited` until someone manually ran `docker compose up` again, which doesn't meet "services start reliably."
+- **Found via:** `grep restart: docker-compose.yml` → nothing. Verified the gap by killing pinger's actual host-level process (simulating a real crash, as opposed to `docker kill`/`docker exec kill`, which Docker treats as an intentional user stop and — correctly — does *not* auto-restart under `unless-stopped`): container stayed `Exited` with `RestartCount=0`.
+- **Fix:** Added `restart: unless-stopped` to all three services. Re-ran the same crash simulation (SIGKILL on the container's host-level PID): container came back `Up`/`healthy` within seconds, `RestartCount=1`. Chose `unless-stopped` over `always` deliberately — it still respects a real `docker compose stop`/`down`, whereas `always` would fight a deliberate shutdown too.
+
+### 20. Compose's obsolete `version:` key
+
+- **Broken:** `docker-compose.yml` still had `version: "3.8"` at the top, which modern Compose ignores and warns about on every invocation (`the attribute version is obsolete, it will be ignored, please remove it to avoid potential confusion`).
+- **Found via:** The warning printed on every `docker compose` command.
+- **Fix:** Removed it; `docker compose config` still validates cleanly without it.
+
+### Redis persistence (re-verified for Tier 2's "data persists correctly" goal)
+
+Tier 1 fixes #3/#4 (bind address and `dir`/volume mount) already made this work; Tier 2 re-verified it empirically rather than just re-reading the config: wrote a key via `redis-cli SET`, ran `BGSAVE`, then did a full `docker compose down` (removes containers, keeps the named volume) + `docker compose up -d`, and confirmed the key was still readable afterward. Persistence survives a full container recreation, not just a process restart.
+
+### Verification (Tier 2 goals)
+
+- **CI pipeline correctly configured:** verified against a real pipeline run on a local GitLab CE + Docker-executor runner (not just YAML review) — `build-gateway`, `build-pinger`, `test-gateway`, `test-pinger`, `package-gateway`, `package-pinger` all report `success`, with `gateway.tar`/`pinger.tar` uploaded as artifacts. (`deploy-to-cluster` fails for the reason in #18, which is Tier 3 scope.)
+- **Compose starts reliably:** `docker compose up -d --build` → all 3 healthy (as in Tier 1); additionally, a simulated crash of any service now results in automatic recovery via `restart: unless-stopped`, confirmed by killing pinger's host-level process and observing `RestartCount=1` and a return to `Up (healthy)`.
+- **Redis data persists correctly:** confirmed via the write → `BGSAVE` → `docker compose down` → `docker compose up -d` → read round-trip described above.
